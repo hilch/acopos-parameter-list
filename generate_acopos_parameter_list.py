@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import hashlib
 import html as html_lib
 import json
@@ -32,6 +33,52 @@ ALLOWED_ATTRS = {"href", "title", "class", "colspan", "rowspan", "src", "alt"}
 FIELD_LABELS = re.compile(r"\s*:\s*$")
 NC_TOKEN = re.compile(r"\bnc[A-Z0-9_]+\b")
 HELP_ROUTE = re.compile(r"#/[^/]+/[^/]+/(?P<path>[^?#]+)")
+
+
+class IdleDotHandler(logging.StreamHandler):
+    """Write a dot to stderr for each interval without a log message."""
+
+    def __init__(self, interval: float = 10.0) -> None:
+        super().__init__()
+        self.interval = interval
+        self.last_message = time.monotonic()
+        self.dots_written = False
+        self.stop_event = threading.Event()
+        self.activity = threading.Condition(self.lock)
+        self.thread = threading.Thread(target=self._write_dots, daemon=True)
+        self.thread.start()
+        atexit.register(self.close)
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if self.dots_written:
+            self.stream.write("\n")
+            self.dots_written = False
+        super().emit(record)
+        self.last_message = time.monotonic()
+        self.activity.notify_all()
+
+    def _write_dots(self) -> None:
+        while not self.stop_event.is_set():
+            with self.activity:
+                now = time.monotonic()
+                remaining = self.interval - (now - self.last_message)
+                if remaining > 0:
+                    self.activity.wait(timeout=remaining)
+                    continue
+                self.stream.write(".")
+                self.flush()
+                self.dots_written = True
+                self.last_message = now
+
+    def close(self) -> None:
+        self.stop_event.set()
+        with self.activity:
+            self.activity.notify_all()
+            if self.dots_written:
+                self.stream.write("\n")
+                self.dots_written = False
+                self.flush()
+        super().close()
 
 
 @dataclass
@@ -592,7 +639,11 @@ def main() -> int:
     parser.add_argument("--limit", type=int); 
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
-    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(levelname)s: %(message)s")
+    logging.basicConfig(
+        level=logging.DEBUG if args.verbose else logging.INFO,
+        format="%(levelname)s: %(message)s",
+        handlers=[IdleDotHandler()],
+    )
     client = HelpClient(args.lang, args.version, args.cache_dir, not args.no_cache, args.refresh, max(0, args.delay), args.workers)
     try:
         # Load shared reference data before fetching individual parameter detail pages.

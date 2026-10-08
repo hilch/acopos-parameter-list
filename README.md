@@ -105,4 +105,4 @@ or endorsed by B&R.
 
 ## License
 
-MIT – see [LICENSE](LICENSE).
+GPL 3 – see [LICENSE](LICENSE).

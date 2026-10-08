@@ -2,9 +2,9 @@
 
 # ACOPOS Parameter List
 
-Builds an offline ACOPOS reference from the B&R Automation Help: a self-contained, searchable
-HTML parameter list and local copies of the "ACOPOS drive functions" and "ACOPOS Error Texts"
-sections. API responses are cached locally by default to speed up repeated runs.
+Builds an offline ACOPOS reference from the B&R Automation Help: self-contained, searchable HTML
+parameter and error lists, plus local copies of the "ACOPOS drive functions" and "ACOPOS Error
+Texts" sections. API responses are cached locally by default to speed up repeated runs.
 
 The online help spreads the information across more than 1000 individual pages, is only usable
 while online, and shows NC constants without their numeric values. This tool collects and enriches
@@ -18,6 +18,7 @@ content.
 - Resolves NC constants to their numeric values directly in the text
 - Cross-links parameters and rewrites help links to the local copy
 - Client-side search plus filters for data type and access mode, all embedded in a single file
+- A separate searchable error list, filterable by error number, error text, severity, and description
 - Local response cache keyed by language, help version, and content path so repeated runs are fast
 
 ## Requirements
@@ -61,6 +62,7 @@ python generate_acopos_parameter_list.py
 | Option | Default | Description |
 |---|---|---|
 | `-o`, `--output` | `acopos_parameters.html` | Path of the generated HTML file |
+| `--errors-output` | `acopos_errors.html` | Path of the generated error-list HTML file |
 | `--lang` | `EN` | Help language |
 | `--version` | `6` | Automation Help version |
 | `--workers` | `8` | Number of parallel downloads |
@@ -86,6 +88,7 @@ cached responses are reused to reduce network requests and speed up generation.
 ## Output
 
 - `acopos_parameters.html` – standalone searchable parameter list
+- `acopos_errors.html` – standalone searchable error list
 - `acopos_help/` – local copy of the referenced help pages including CSS, JS, and images
 - `.cache/` – cached API responses
 

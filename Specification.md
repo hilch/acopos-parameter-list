@@ -1,11 +1,12 @@
-# Specification: ACOPOS Parameter Search as a Single HTML File
+# Specification: ACOPOS Parameter and Error Search
 
 ## 1. Purpose
 
-A Python script (`generate_acopos_parameter_list.py`) downloads the ACOPOS parameter documentation
-from the B&R Automation Help (version 6, language EN by default; both are configurable), enriches
-it, and generates a searchable HTML file (`acopos_parameters.html`) plus a local copy of the
-sections "ACOPOS drive functions" and "ACOPOS Error Texts" including HTML, CSS, and JavaScript.
+A Python script (`generate_acopos_parameter_list.py`) downloads ACOPOS documentation from the B&R
+Automation Help (version 6, language EN by default; both are configurable), enriches it, and
+generates searchable HTML files (`acopos_parameters.html` and `acopos_errors.html`) plus a local
+copy of the sections "ACOPOS drive functions" and "ACOPOS Error Texts" including HTML, CSS, and
+JavaScript.
 
 Motivation: The online help spreads the information across more than 1000 individual pages, is only
 usable online, and shows NC constants without their numeric values.
@@ -124,7 +125,7 @@ Columns: name, data type, value (decimal **or** hexadecimal `0x…`), descriptio
 2. **Load overview** → list of all parameters (ID, data type, define, title, detail path).
 3. **Load detail pages** (in parallel, see §7) → per parameter the field pairs + description block.
 4. **Post-processing** (see §5).
-5. **Render** the single HTML file (see §6).
+5. **Render** the parameter and error-list HTML files (see §6).
 
 ## 5. Post-Processing Rules
 
@@ -180,14 +181,15 @@ filtered. `target` and `rel` are added to external Automation Help links when ne
 
 All values that do not originate from the HTML (title, define, IDs) are escaped during rendering.
 
-## 6. Output: HTML File and Local Help
+## 6. Output: HTML Files and Local Help
 
 ### 6.1 Hard Requirements
 
-- **One searchable HTML file** `acopos_parameters.html` with inline CSS and JavaScript and no external
-  stylesheet or script dependency. It links to the separately stored `acopos_help/` tree. HTTPS image
-  URLs from parameter content are retained, so external network requests are possible when such
-  images are present. External help links also require a connection when opened.
+- **Two searchable HTML files**: `acopos_parameters.html` and `acopos_errors.html`, each with inline
+  CSS and JavaScript and no external stylesheet or script dependency. The parameter list links to
+  the separately stored `acopos_help/` tree. HTTPS image URLs from parameter content are retained,
+  so external network requests are possible when such images are present. External help links also
+  require a connection when opened.
 - Generated content and successfully downloaded local help are usable offline, UTF-8,
   `<!DOCTYPE html>`, except for retained remote HTTPS images or unavailable local assets. The HTML
   language attribute is currently fixed to `lang="en"`, including when source content is localized.
@@ -233,6 +235,15 @@ Data attributes for the search:
 - Keyboard: `/` focuses the search field, `Esc` clears it.
 - Without an active search, all parameters are displayed (collapsed).
 
+### 6.5 Error List
+
+`acopos_errors.html` is generated from numeric `.htm`/`.html` detail pages under
+`acopos_help/ncsoftware/acp10_errortext/html/`. Each expandable error shows its signed error code,
+bracketed error number, error text, severity, and description, with a relative link to the complete
+local help detail page. Independent controls filter by error number (matching either displayed
+number), error text, severity, and description. Filtering is case-insensitive and runs locally in
+the generated page.
+
 ## 7. Non-Functional Requirements
 
 - **Python** ≥ 3.10, type annotations, `argparse` CLI.
@@ -257,6 +268,7 @@ Data attributes for the search:
 python generate_acopos_parameter_list.py [options]
 
   -o, --output PATH      Output file (default: acopos_parameters.html)
+  --errors-output PATH  Error-list file (default: acopos_errors.html)
       --lang CODE        Language code for the API (default: EN)
       --version VER      Help version (default: 6)
       --workers N        Parallel downloads (default: 8)
@@ -274,13 +286,15 @@ python generate_acopos_parameter_list.py [options]
 | Class / function | Task |
 |---|---|
 | `HelpClient` | API and asset access, retry, rate limit, cache |
-| `NcConstant`, `ParameterRef`, `Parameter` | Parsed constants, overview references, and parameter data |
+| `NcConstant`, `ParameterRef`, `Parameter`, `ErrorEntry` | Parsed constants, overview references, parameter data, and error data |
 | `parse_constants(source)` | Parse NC constants into `NcConstant` values |
 | `parse_overview(source)` | Parse overview into `ParameterRef` values |
 | `parse_parameter(source, ref)` | Parse parameter fields and description |
+| `parse_error_pages(help_dir)` | Parse numeric error pages from the local help tree |
 | `sanitize_and_enrich(...)` | Sanitize fragments, rewrite links, and annotate constants |
 | `download_help_tree(client, output_dir)` | Download local help pages and assets |
 | `render_html(parameters, lang, version)` | Generate the searchable HTML document |
+| `render_errors(errors, lang, version)` | Generate the searchable error-list HTML document |
 | `main()` | Parse CLI options and run the generator |
 
 Data classes:

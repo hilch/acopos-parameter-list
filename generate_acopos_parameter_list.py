@@ -119,6 +119,17 @@ class Parameter:
     missing: bool = False
 
 
+@dataclass
+class ErrorEntry:
+    """Store a parsed ACOPOS error number, severity, and description."""
+
+    code: str
+    number: str
+    text: str
+    severity: str
+    description: str
+
+
 class HelpClient:
     """Fetch help pages and assets with optional response caching and retries."""
 
@@ -372,6 +383,50 @@ def parse_parameter(source: str, ref: ParameterRef) -> Parameter:
     return Parameter(ref.id, define, ref.title, datatype, access, ref.source_path, fields, description)
 
 
+def parse_error_pages(help_dir: Path) -> list[ErrorEntry]:
+    """Parse numeric error detail pages from the downloaded local help tree.
+
+    Args:
+        help_dir: Root of the downloaded Automation Help tree.
+
+    Returns:
+        Error entries sorted by their bracketed error number.
+    """
+    error_dir = help_dir / "ncsoftware" / "acp10_errortext" / "html"
+    if not error_dir.is_dir():
+        LOG.warning("Error detail directory not found: %s", error_dir)
+        return []
+    errors: list[ErrorEntry] = []
+    for page in sorted(error_dir.glob("*"), key=lambda item: int(item.stem) if item.stem.isdigit() else -1):
+        if page.suffix.lower() not in {".htm", ".html"} or not page.stem.isdigit():
+            continue
+        try:
+            soup = BeautifulSoup(page.read_text(encoding="utf-8"), "lxml")
+        except OSError as exc:
+            LOG.warning("Error page could not be read %s: %s", page, exc)
+            continue
+        heading = soup.find("h1")
+        match = re.fullmatch(r"\s*(?P<code>-?\d+)\s*\[(?P<number>-?\d+)\]\s*:\s*(?P<text>.+?)\s*", text_of(heading) if isinstance(heading, Tag) else "")
+        if not match:
+            LOG.warning("Error page heading not recognized: %s", page)
+            continue
+        severity = ""
+        for row in soup.select("table tr"):
+            cells = row.find_all(["td", "th"], recursive=False)
+            if len(cells) >= 2 and text_of(cells[0]).rstrip(":").casefold() in {"severity", "schweregrad"}:
+                severity = text_of(cells[1])
+                break
+        description = ""
+        for section_heading in soup.find_all(["h2", "h3", "h4"]):
+            if text_of(section_heading).rstrip(":").casefold() not in {"description", "beschreibung"}:
+                continue
+            siblings = section_heading.find_next_siblings()
+            description = " ".join(text_of(node) for node in siblings if isinstance(node, Tag) and node.name not in {"h2", "h3", "h4"})
+            break
+        errors.append(ErrorEntry(match["code"], match["number"], match["text"], severity, description))
+    return sorted(errors, key=lambda error: int(error.number))
+
+
 def local_help_href(path: str, local_help: Path | None, source_file: Path | None) -> str | None:
     """Build a relative link to a page in the downloaded local-help tree.
 
@@ -619,6 +674,72 @@ def render_html(parameters: list[Parameter], lang: str, version: str) -> str:
     return f'<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ACOPOS Parameters</title><style>{css}</style></head><body><header><h1>ACOPOS Parameter List</h1><small>Source: B&amp;R Automation Help, version {html_lib.escape(version)}, generated {generated} | {len(parameters)} parameters</small></header><main><div class="tools"><input id="search" autofocus placeholder="Search parameters..." aria-label="Search"><select id="type" aria-label="Data type">{type_options}</select><select id="access" aria-label="Access"><option value="">All access</option><option>RD</option><option>WR</option><option>RW</option></select><button id="clear" type="button">Clear</button><output id="count"></output></div>{''.join(rows)}</main><script>{js}</script></body></html>'
 
 
+def render_errors(
+    errors: list[ErrorEntry],
+    lang: str,
+    version: str,
+    help_dir: Path = Path("acopos_help"),
+    output_file: Path = Path("acopos_errors.html"),
+) -> str:
+    """Render parsed ACOPOS errors as a searchable standalone HTML document.
+
+    Args:
+        errors: Parsed errors from the local help tree.
+        lang: Language code associated with the downloaded help content.
+        version: Help documentation version to display in the document.
+        help_dir: Root of the downloaded local help tree.
+        output_file: Destination path used to calculate relative detail links.
+
+    Returns:
+        Complete HTML document with error filters and expandable descriptions.
+    """
+    rows = []
+    for index, error in enumerate(errors):
+        number_filter = html_lib.escape(f"{error.code} {error.number}".casefold(), quote=True)
+        text_filter = html_lib.escape(error.text.casefold(), quote=True)
+        severity_filter = html_lib.escape(error.severity.casefold(), quote=True)
+        description_filter = html_lib.escape(error.description.casefold(), quote=True)
+        description = html_lib.escape(error.description) if error.description else "Description not available."
+        detail_file = help_dir / "ncsoftware" / "acp10_errortext" / "html" / f"{error.number}.htm"
+        detail_href = Path(__import__("os").path.relpath(detail_file, output_file.parent)).as_posix()
+        rows.append(
+            f'<details id="error-{index}" class="error" data-error-number="{number_filter}" '
+            f'data-error-text="{text_filter}" data-severity="{severity_filter}" '
+            f'data-description="{description_filter}"><summary><span class="number">'
+            f'{html_lib.escape(error.code)} [{html_lib.escape(error.number)}]</span>'
+            f'<span class="error-text">{html_lib.escape(error.text)}</span>'
+            f'<span class="severity">{html_lib.escape(error.severity or "Unknown")}</span>'
+            f'</summary><div class="details"><h2>Description</h2><p>{description}</p>'
+            f'<p class="full-description"><a href="{html_lib.escape(detail_href, quote=True)}">'
+            f'Open full description in local help</a></p></div></details>'
+        )
+    generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    severities = sorted({error.severity for error in errors if error.severity}, key=str.casefold)
+    severity_options = '<option value="">All severities</option>' + "".join(
+        f'<option value="{html_lib.escape(value.casefold(), quote=True)}">{html_lib.escape(value)}</option>'
+        for value in severities
+    )
+    css = """*{box-sizing:border-box}body{margin:0;background:#f4f1ea;color:#202a2e;font:16px Georgia,serif}header,main{max-width:1100px;margin:auto;padding:28px 20px}header{border-bottom:3px solid #d96c3b}h1{margin:0 0 8px;font:700 2rem 'Trebuchet MS',sans-serif}small{color:#536269}.tools{display:grid;grid-template-columns:1fr 1.4fr .8fr 1.8fr auto;gap:10px;align-items:end;margin:20px 0;position:sticky;top:0;background:#f4f1ea;padding:12px 0;z-index:2}.tools label{display:grid;gap:5px;font:600 .9rem 'Trebuchet MS',sans-serif}input,select,button{width:100%;font:inherit;padding:10px;border:1px solid #9da8a8;background:#fff}.tools button{width:auto;cursor:pointer;background:#d96c3b;color:white;border-color:#d96c3b}.error{background:white;border:1px solid #cad1cf;margin:8px 0}.error summary{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(220px,2fr) auto;gap:12px;align-items:center;cursor:pointer;padding:12px;font-family:'Trebuchet MS',sans-serif;font-weight:bold}.number{font-variant-numeric:tabular-nums;white-space:nowrap}.severity{color:#9b3f21}.details{padding:0 14px 12px}.details h2{font:700 1rem 'Trebuchet MS',sans-serif}.details p{margin:0 0 8px;line-height:1.5}.details .full-description{margin-top:12px}.details a{color:#9b3f21;font-weight:bold}.hidden{display:none}.empty{color:#536269}@media(max-width:760px){header,main{padding:20px 12px}.tools{grid-template-columns:1fr 1fr}.error summary{grid-template-columns:1fr;gap:5px}}"""
+    js = """(() => { const inputs=[...document.querySelectorAll('[data-filter]')], severity=document.querySelector('#severity'), count=document.querySelector('#count'), clear=document.querySelector('#clear'), empty=document.querySelector('#empty'), items=[...document.querySelectorAll('.error')]; const run=()=>{const filtered=items.filter(item=>inputs.every(input=>item.dataset[input.dataset.filter].includes(input.value.trim().toLowerCase()))&&(!severity.value||item.dataset.severity===severity.value));items.forEach(item=>item.classList.toggle('hidden',!filtered.includes(item)));count.textContent=`${filtered.length} / ${items.length}`;empty.classList.toggle('hidden',filtered.length!==0)};inputs.forEach(input=>input.addEventListener('input',run));severity.addEventListener('change',run);clear.onclick=()=>{inputs.forEach(input=>input.value='');severity.value='';run();inputs[0].focus()};run()})();"""
+    lang_attr = html_lib.escape(lang.lower(), quote=True)
+    return (
+        f'<!DOCTYPE html><html lang="{lang_attr}"><head><meta charset="utf-8">'
+        f'<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f'<title>ACOPOS Error List</title><style>{css}</style></head><body><header>'
+        f'<h1>ACOPOS Error List</h1><small>Source: B&amp;R Automation Help, version '
+        f'{html_lib.escape(version)}, generated {generated} | {len(errors)} errors</small></header>'
+        f'<main><div class="tools"><label>Error number<input data-filter="errorNumber" '
+        f'placeholder="Number or code" aria-label="Filter by error number"></label>'
+        f'<label>Error text<input data-filter="errorText" placeholder="Filter error text" '
+        f'aria-label="Filter by error text"></label><label>Severity<select id="severity">'
+        f'{severity_options}</select></label><label>Description<input data-filter="description" '
+        f'placeholder="Filter description" aria-label="Filter by description"></label>'
+        f'<button id="clear" type="button">Clear</button><output id="count"></output></div>'
+        f'<p id="empty" class="empty hidden">No matching errors.</p>{"".join(rows)}'
+        f'</main><script>{js}</script></body></html>'
+    )
+
+
 def main() -> int:
     """Parse CLI options, download help content, and write generated output.
 
@@ -628,6 +749,7 @@ def main() -> int:
     """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-o", "--output", type=Path, default=Path("acopos_parameters.html"))
+    parser.add_argument("--errors-output", type=Path, default=Path("acopos_errors.html"))
     parser.add_argument("--lang", default="EN"); 
     parser.add_argument("--version", default="6"); 
     parser.add_argument("--workers", type=int, default=8); 
@@ -672,6 +794,13 @@ def main() -> int:
     missing = sum(p.missing for p in parameters)
     args.output.write_text(render_html(parameters, args.lang, args.version), encoding="utf-8")
     LOG.info("%s written with %d parameters", args.output, len(parameters))
+    errors = parse_error_pages(help_dir)
+    args.errors_output.parent.mkdir(parents=True, exist_ok=True)
+    args.errors_output.write_text(
+        render_errors(errors, args.lang, args.version, help_dir, args.errors_output),
+        encoding="utf-8",
+    )
+    LOG.info("%s written with %d errors", args.errors_output, len(errors))
     # Exit code 2 flags output where more than five percent of detail pages failed.
     return 2 if parameters and missing / len(parameters) > 0.05 else 0
 

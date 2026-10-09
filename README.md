@@ -17,7 +17,7 @@ content.
   Automation Help content API
 - Resolves NC constants to their numeric values directly in the text
 - Cross-links parameters and rewrites help links to the local copy
-- Client-side search plus filters for data type and access mode, all embedded in a single file
+- Client-side search plus filters for data type and access mode
 - A separate searchable error list, filterable by error number, error text, severity, and description
 - Local response cache keyed by language, help version, and content path so repeated runs are fast
 
@@ -93,6 +93,21 @@ cached responses are reused to reduce network requests and speed up generation.
 - `acopos_help/` – local copy of the referenced help pages including CSS, JS, and images
 - `.cache/` – cached API responses
 
+## Usage
+
+For convenience, the PowerShell script creates shortcuts to the two HTML files it generates:
+
+![desktop_links](https://github.com/hilch/acopos-parameter-list/blob/main/doc/desktop_links.png)
+
+### ACOPOS Parameter list
+
+![acopos parameter list](https://github.com/hilch/acopos-parameter-list/blob/main/doc/acopos_parameter_list.png)
+
+### ACOPOS Errors
+
+![acopos errors](https://github.com/hilch/acopos-parameter-list/blob/main/doc/acopos_errors.png)
+
+
 ## Exit codes
 
 | Code | Meaning |
@@ -103,9 +118,12 @@ cached responses are reused to reduce network requests and speed up generation.
 
 ## Notes
 
-The generated content originates from the B&R Automation Help and remains the property of
+- Depending on your internet speed and processing power, the script will run for a few minutes.
+
+- The generated content originates from the B&R Automation Help and remains the property of
 B&R Industrial Automation. This project only provides the tooling and is not affiliated with
 or endorsed by B&R.
+
 
 ## License
 

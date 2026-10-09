@@ -33,8 +33,9 @@ content.
 ```
 
 The script creates the virtual environment `.venv` if it does not exist yet, installs the
-dependencies from `requirements.txt`, and then runs the generator. Additional arguments are
-forwarded to the Python script:
+dependencies from `requirements.txt`, and then runs the generator from the project directory.
+After the HTML files are generated, it creates or updates desktop shortcuts for both lists.
+Additional arguments are forwarded to the Python script:
 
 ```powershell
 .\run_acopos_parameter_list.ps1 --lang DE --verbose

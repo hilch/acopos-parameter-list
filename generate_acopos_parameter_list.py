@@ -659,19 +659,32 @@ def render_html(parameters: list[Parameter], lang: str, version: str) -> str:
     Returns:
         Complete HTML document with embedded styles and search behavior.
     """
+    german = lang.upper() == "DE"
     rows = []
     for parameter in parameters:
         search = " ".join([str(parameter.id), parameter.define, parameter.title, parameter.datatype, parameter.access, *(plain_html_text(value) for value in parameter.fields.values()), plain_html_text(parameter.description_html)]).lower()
         fields = "".join(f'<tr><th>{html_lib.escape(label)}</th><td>{value}</td></tr>' for label, value in parameter.fields.items())
-        missing = '<p class="missing">Details not available</p>' if parameter.missing else ""
+        missing = f'<p class="missing">{"Details nicht verfügbar" if german else "Details not available"}</p>' if parameter.missing else ""
         rows.append(f'<details id="param-{parameter.id}" class="param" data-id="{parameter.id}" data-define="{html_lib.escape(parameter.define, quote=True)}" data-title="{html_lib.escape(parameter.title, quote=True)}" data-datatype="{html_lib.escape(parameter.datatype, quote=True)}" data-access="{html_lib.escape(parameter.access, quote=True)}" data-search="{html_lib.escape(search, quote=True)}"><summary>{html_lib.escape(str(parameter.id))} — {html_lib.escape(parameter.datatype)} — {html_lib.escape(parameter.define)}: {html_lib.escape(parameter.title)}</summary><div class="details">{missing}<table><tbody>{fields}</tbody></table>{parameter.description_html}</div></details>')
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     # Keep CSS and search behavior inline so the output works without a web server.
     css = """*{box-sizing:border-box}body{margin:0;background:#f4f1ea;color:#202a2e;font:16px Georgia,serif}header,main{max-width:1100px;margin:auto;padding:28px 20px}header{border-bottom:3px solid #d96c3b}h1{margin:0 0 8px;font:700 2rem 'Trebuchet MS',sans-serif}small{color:#536269}.tools{display:flex;gap:10px;flex-wrap:wrap;margin:20px 0;position:sticky;top:0;background:#f4f1ea;padding:12px 0;z-index:2}input,select,button{font:inherit;padding:10px;border:1px solid #9da8a8;background:#fff}input{flex:1;min-width:220px}button{cursor:pointer;background:#d96c3b;color:white;border-color:#d96c3b}.param{background:white;border:1px solid #cad1cf;margin:8px 0}.param summary{cursor:pointer;padding:12px;font-family:'Trebuchet MS',sans-serif;font-weight:bold}.details{padding:0 14px 16px}.details table{border-collapse:collapse;width:100%;margin:8px 0}.details th,.details td{border-bottom:1px solid #e1e5e3;padding:7px;text-align:left;vertical-align:top}.details th{width:190px;color:#536269}.nc-const-value{color:#b44724;font-weight:bold}.missing{color:#b44724;font-style:italic}.hidden{display:none}@media(max-width:600px){body{font-size:15px}header,main{padding:20px 12px}.tools>*{width:100%}.details th{width:35%}}"""
     js = """(() => { const input=document.querySelector('#search'), count=document.querySelector('#count'), clear=document.querySelector('#clear'), type=document.querySelector('#type'), access=document.querySelector('#access'), items=[...document.querySelectorAll('.param')]; const run=()=>{const raw=input.value.trim().toLowerCase(), terms=raw.split(/\\s+/).filter(Boolean), exact=/^\\d+$/.test(raw), filtered=items.filter(x=>{const data=x.dataset, words=terms.every(t=>{let key='search', value=data.search;if(t.includes(':')){const p=t.indexOf(':');key={define:'define',id:'id',type:'datatype'}[t.slice(0,p)]||key;value=data[key]||'';t=t.slice(p+1)}return value.includes(t)});return words&&(!type.value||data.datatype===type.value)&&(!access.value||data.access===access.value)});items.forEach(x=>x.classList.toggle('hidden',!filtered.includes(x)));filtered.sort((a,b)=>exact&&a.dataset.id===raw?-1:b.dataset.id===raw?1:0).forEach(x=>x.parentNode.appendChild(x));count.textContent=`${filtered.length} / ${items.length}`;history.replaceState(null,'',raw?'#q='+encodeURIComponent(input.value):location.pathname)};let timer;input.addEventListener('input',()=>{clearTimeout(timer);timer=setTimeout(run,150)});[type,access].forEach(x=>x.addEventListener('change',run));clear.onclick=()=>{input.value='';run();input.focus()};document.addEventListener('keydown',e=>{if(e.key==='/'&&document.activeElement!==input){e.preventDefault();input.focus()}if(e.key==='Escape'){input.value='';run()}});if(location.hash.startsWith('#q='))input.value=decodeURIComponent(location.hash.slice(3));run();})();"""
     types = sorted({p.datatype for p in parameters if p.datatype})
-    type_options = '<option value="">All data types</option>' + ''.join(f'<option>{html_lib.escape(x)}</option>' for x in types)
-    return f'<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ACOPOS Parameters</title><style>{css}</style></head><body><header><h1>ACOPOS Parameter List</h1><small>Source: B&amp;R Automation Help, version {html_lib.escape(version)}, generated {generated} | {len(parameters)} parameters</small></header><main><div class="tools"><input id="search" autofocus placeholder="Search parameters..." aria-label="Search"><select id="type" aria-label="Data type">{type_options}</select><select id="access" aria-label="Access"><option value="">All access</option><option>RD</option><option>WR</option><option>RW</option></select><button id="clear" type="button">Clear</button><output id="count"></output></div>{''.join(rows)}</main><script>{js}</script></body></html>'
+    type_options = f'<option value="">{"Alle Datentypen" if german else "All data types"}</option>' + ''.join(f'<option>{html_lib.escape(x)}</option>' for x in types)
+    access_options = f'<option value="">{"Alle Zugriffsarten" if german else "All access"}</option><option>RD</option><option>WR</option><option>RW</option>'
+    lang_attr = html_lib.escape(lang.lower(), quote=True)
+    title = "ACOPOS Parameterliste" if german else "ACOPOS Parameters"
+    heading = "ACOPOS Parameterliste" if german else "ACOPOS Parameter List"
+    source = "Quelle" if german else "Source"
+    generated_label = "erstellt" if german else "generated"
+    parameter_label = "Parameter" if german else "parameters"
+    search_placeholder = "Parameter suchen..." if german else "Search parameters..."
+    search_label = "Suche" if german else "Search"
+    type_label = "Datentyp" if german else "Data type"
+    access_label = "Zugriff" if german else "Access"
+    clear_label = "Leeren" if german else "Clear"
+    return f'<!DOCTYPE html><html lang="{lang_attr}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title}</title><style>{css}</style></head><body><header><h1>{heading}</h1><small>{source}: B&amp;R Automation Help, version {html_lib.escape(version)}, {generated_label} {generated} | {len(parameters)} {parameter_label}</small></header><main><div class="tools"><input id="search" autofocus placeholder="{search_placeholder}" aria-label="{search_label}"><select id="type" aria-label="{type_label}">{type_options}</select><select id="access" aria-label="{access_label}">{access_options}</select><button id="clear" type="button">{clear_label}</button><output id="count"></output></div>{''.join(rows)}</main><script>{js}</script></body></html>'
 
 
 def render_errors(
@@ -693,13 +706,14 @@ def render_errors(
     Returns:
         Complete HTML document with error filters and expandable descriptions.
     """
+    german = lang.upper() == "DE"
     rows = []
     for index, error in enumerate(errors):
         number_filter = html_lib.escape(f"{error.code} {error.number}".casefold(), quote=True)
         text_filter = html_lib.escape(error.text.casefold(), quote=True)
         severity_filter = html_lib.escape(error.severity.casefold(), quote=True)
         description_filter = html_lib.escape(error.description.casefold(), quote=True)
-        description = html_lib.escape(error.description) if error.description else "Description not available."
+        description = html_lib.escape(error.description) if error.description else ("Beschreibung nicht verfügbar." if german else "Description not available.")
         detail_file = help_dir / "ncsoftware" / "acp10_errortext" / "html" / f"{error.number}.htm"
         detail_href = Path(__import__("os").path.relpath(detail_file, output_file.parent)).as_posix()
         rows.append(
@@ -715,27 +729,44 @@ def render_errors(
         )
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     severities = sorted({error.severity for error in errors if error.severity}, key=str.casefold)
-    severity_options = '<option value="">All severities</option>' + "".join(
+    severity_options = f'<option value="">{"Alle Schweregrade" if german else "All severities"}</option>' + "".join(
         f'<option value="{html_lib.escape(value.casefold(), quote=True)}">{html_lib.escape(value)}</option>'
         for value in severities
     )
     css = """*{box-sizing:border-box}body{margin:0;background:#f4f1ea;color:#202a2e;font:16px Georgia,serif}header,main{max-width:1100px;margin:auto;padding:28px 20px}header{border-bottom:3px solid #d96c3b}h1{margin:0 0 8px;font:700 2rem 'Trebuchet MS',sans-serif}small{color:#536269}.tools{display:grid;grid-template-columns:1fr 1.4fr .8fr 1.8fr auto;gap:10px;align-items:end;margin:20px 0;position:sticky;top:0;background:#f4f1ea;padding:12px 0;z-index:2}.tools label{display:grid;gap:5px;font:600 .9rem 'Trebuchet MS',sans-serif}input,select,button{width:100%;font:inherit;padding:10px;border:1px solid #9da8a8;background:#fff}.tools button{width:auto;cursor:pointer;background:#d96c3b;color:white;border-color:#d96c3b}.error{background:white;border:1px solid #cad1cf;margin:8px 0}.error summary{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(220px,2fr) auto;gap:12px;align-items:center;cursor:pointer;padding:12px;font-family:'Trebuchet MS',sans-serif;font-weight:bold}.number{font-variant-numeric:tabular-nums;white-space:nowrap}.severity{color:#9b3f21}.details{padding:0 14px 12px}.details h2{font:700 1rem 'Trebuchet MS',sans-serif}.details p{margin:0 0 8px;line-height:1.5}.details .full-description{margin-top:12px}.details a{color:#9b3f21;font-weight:bold}.hidden{display:none}.empty{color:#536269}@media(max-width:760px){header,main{padding:20px 12px}.tools{grid-template-columns:1fr 1fr}.error summary{grid-template-columns:1fr;gap:5px}}"""
     js = """(() => { const inputs=[...document.querySelectorAll('[data-filter]')], severity=document.querySelector('#severity'), count=document.querySelector('#count'), clear=document.querySelector('#clear'), empty=document.querySelector('#empty'), items=[...document.querySelectorAll('.error')]; const run=()=>{const filtered=items.filter(item=>inputs.every(input=>item.dataset[input.dataset.filter].includes(input.value.trim().toLowerCase()))&&(!severity.value||item.dataset.severity===severity.value));items.forEach(item=>item.classList.toggle('hidden',!filtered.includes(item)));count.textContent=`${filtered.length} / ${items.length}`;empty.classList.toggle('hidden',filtered.length!==0)};inputs.forEach(input=>input.addEventListener('input',run));severity.addEventListener('change',run);clear.onclick=()=>{inputs.forEach(input=>input.value='');severity.value='';run();inputs[0].focus()};run()})();"""
     lang_attr = html_lib.escape(lang.lower(), quote=True)
+    title = "ACOPOS Fehlerliste" if german else "ACOPOS Error List"
+    heading = title
+    source = "Quelle" if german else "Source"
+    generated_label = "erstellt" if german else "generated"
+    error_label = "Fehler" if german else "errors"
+    number_label = "Fehlernummer" if german else "Error number"
+    number_placeholder = "Nummer oder Code" if german else "Number or code"
+    number_aria = "Nach Fehlernummer filtern" if german else "Filter by error number"
+    text_label = "Fehlertext" if german else "Error text"
+    text_placeholder = "Fehlertext filtern" if german else "Filter error text"
+    text_aria = "Nach Fehlertext filtern" if german else "Filter by error text"
+    severity_label = "Schweregrad" if german else "Severity"
+    description_label = "Beschreibung" if german else "Description"
+    description_placeholder = "Beschreibung filtern" if german else "Filter description"
+    description_aria = "Nach Beschreibung filtern" if german else "Filter by description"
+    clear_label = "Leeren" if german else "Clear"
+    empty_label = "Keine passenden Fehler." if german else "No matching errors."
     return (
         f'<!DOCTYPE html><html lang="{lang_attr}"><head><meta charset="utf-8">'
         f'<meta name="viewport" content="width=device-width,initial-scale=1">'
-        f'<title>ACOPOS Error List</title><style>{css}</style></head><body><header>'
-        f'<h1>ACOPOS Error List</h1><small>Source: B&amp;R Automation Help, version '
-        f'{html_lib.escape(version)}, generated {generated} | {len(errors)} errors</small></header>'
-        f'<main><div class="tools"><label>Error number<input data-filter="errorNumber" '
-        f'placeholder="Number or code" aria-label="Filter by error number"></label>'
-        f'<label>Error text<input data-filter="errorText" placeholder="Filter error text" '
-        f'aria-label="Filter by error text"></label><label>Severity<select id="severity">'
-        f'{severity_options}</select></label><label>Description<input data-filter="description" '
-        f'placeholder="Filter description" aria-label="Filter by description"></label>'
-        f'<button id="clear" type="button">Clear</button><output id="count"></output></div>'
-        f'<p id="empty" class="empty hidden">No matching errors.</p>{"".join(rows)}'
+        f'<title>{title}</title><style>{css}</style></head><body><header>'
+        f'<h1>{heading}</h1><small>{source}: B&amp;R Automation Help, version '
+        f'{html_lib.escape(version)}, {generated_label} {generated} | {len(errors)} {error_label}</small></header>'
+        f'<main><div class="tools"><label>{number_label}<input data-filter="errorNumber" '
+        f'placeholder="{number_placeholder}" aria-label="{number_aria}"></label>'
+        f'<label>{text_label}<input data-filter="errorText" placeholder="{text_placeholder}" '
+        f'aria-label="{text_aria}"></label><label>{severity_label}<select id="severity">'
+        f'{severity_options}</select></label><label>{description_label}<input data-filter="description" '
+        f'placeholder="{description_placeholder}" aria-label="{description_aria}"></label>'
+        f'<button id="clear" type="button">{clear_label}</button><output id="count"></output></div>'
+        f'<p id="empty" class="empty hidden">{empty_label}</p>{"".join(rows)}'
         f'</main><script>{js}</script></body></html>'
     )
 
